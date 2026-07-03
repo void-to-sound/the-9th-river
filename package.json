@@ -6,11 +6,15 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "convert": "node scripts/convert.js"
   },
   "dependencies": {
+    "@spotify/basic-pitch": "^1.0.1",
+    "@tonejs/midi": "^2.0.28",
     "@types/p5": "^1.7.7",
     "next": "16.2.9",
+    "node-web-audio-api": "^2.0.0",
     "p5": "^2.3.0",
     "react": "19.2.4",
     "react-dom": "19.2.4"
