@@ -9,24 +9,28 @@ export class Engine {
     this.particles = particles;
   }
 
-  // Any event type (mouse, MIDI, JSON, mic) calls this to inject a field
   addField(field: Field): void {
     this.fields.push(field);
   }
 
-  update(dt: number): void {
+  update(dt: number, width: number, height: number): void {
     // 1. Advance all fields, remove expired ones
     for (const field of this.fields) field.update(dt);
     this.fields = this.fields.filter((f) => f.isAlive());
 
     // 2. Physics step per particle
     for (const particle of this.particles) {
-      // Sum forces from every active field
       for (const field of this.fields) {
         particle.applyForce(field.forceOn(particle.position));
       }
-      // acceleration → velocity → position → reset acceleration
       particle.update();
+
+      // 3. Out of bounds → snap back to origin (with margin so particle travels a bit further before reset)
+      const margin = 30;
+      const { x, y } = particle.position;
+      if (x < -margin || x > width + margin || y < -margin || y > height + margin) {
+        particle.resetToOrigin();
+      }
     }
   }
 }

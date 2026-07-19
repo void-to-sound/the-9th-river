@@ -8,6 +8,12 @@ export class Vec2 {
     return this;
   }
 
+  scaleSelf(s: number): this {
+    this.x *= s;
+    this.y *= s;
+    return this;
+  }
+
   zero(): this {
     this.x = 0;
     this.y = 0;

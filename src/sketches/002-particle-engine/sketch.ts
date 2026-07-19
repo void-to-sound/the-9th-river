@@ -41,8 +41,8 @@ export function createEngineSketch() {
     p.draw = () => {
       p.background(0);
 
-      const dt = p.deltaTime / 1000; // milliseconds → seconds
-      engine.update(dt);
+      const dt = p.deltaTime / 1000;
+      engine.update(dt, p.width, p.height);
 
       p.noStroke();
       p.fill(255);
