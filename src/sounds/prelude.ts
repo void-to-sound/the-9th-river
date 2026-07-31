@@ -2,7 +2,7 @@
 
 import * as Tone from "tone";
 
-const MEASURES = [
+export const MEASURES = [
   { measure: 1,  harmony: ["C4","E4","G4","C5","E5"],  notes: ["C4","E4","G4","C5","E5","G4","C5","E5","C4","E4","G4","C5","E5","G4","C5","E5"] },
   { measure: 2,  harmony: ["C4","D4","A4","D5","F5"],  notes: ["C4","D4","A4","D5","F5","A4","D5","F5","C4","D4","A4","D5","F5","A4","D5","F5"] },
   { measure: 3,  harmony: ["B3","D4","G4","D5","F5"],  notes: ["B3","D4","G4","D5","F5","G4","D5","F5","B3","D4","G4","D5","F5","G4","D5","F5"] },
@@ -15,15 +15,24 @@ const MEASURES = [
 
 export type PreludeMeasure = (typeof MEASURES)[number];
 
+// Lets a caller swap in a different instrument for the melody line while
+// reusing Prelude's note data, timing grid, and looping as-is.
+export interface PreludeVoice {
+  trigger: (note: string, time: number, velocity: number) => void;
+}
+
 export class Prelude {
   private filter: Tone.Filter;
   private reverb: Tone.Reverb;
   private synth: Tone.Synth;
+  private voice: PreludeVoice | null;
   private part: Tone.Part | null = null;
   private measureLoop: Tone.Loop | null = null;
   onMeasure: ((index: number) => void) | null = null;
 
-  constructor() {
+  constructor(voice?: PreludeVoice) {
+    this.voice = voice ?? null;
+
     this.filter = new Tone.Filter({
       frequency: 1800,
       type: "lowpass",
@@ -61,7 +70,11 @@ export class Prelude {
 
     this.part = new Tone.Part<{ time: string; note: string }>(
       (time, { note }) => {
-        this.synth.triggerAttackRelease(note, "32n", time, 0.55);
+        if (this.voice) {
+          this.voice.trigger(note, time, 0.55);
+        } else {
+          this.synth.triggerAttackRelease(note, "32n", time, 0.55);
+        }
       },
       events,
     );
