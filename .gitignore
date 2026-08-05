@@ -39,3 +39,7 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# rendered scene exports (large binaries, not source)
+video-orbit-final*.mp4
+foggy-harbour-morning-001-final*.mp4

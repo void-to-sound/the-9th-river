@@ -15,10 +15,21 @@ export const MEASURES = [
 
 export type PreludeMeasure = (typeof MEASURES)[number];
 
+// Per-note overrides of a voice's own defaults — used sparingly, e.g. to
+// make a single ending note behave differently (held longer, cut drier)
+// than the piece's normal 16th-note pulse, without touching what every
+// other note sounds like.
+export interface PreludeTriggerOptions {
+  duration?: string;  // Tone.js time notation (e.g. "8n", "1m") for how long the note is held
+  reverbWet?: number; // 0-1, ramps the voice's reverb mix to this level at trigger time
+  delayWet?: number;  // 0-1, ramps the voice's feedback delay mix to this level (ignored by voices with no delay)
+  release?: number;   // seconds, overrides the voice's envelope release for this note only
+}
+
 // Lets a caller swap in a different instrument for the melody line while
 // reusing Prelude's note data, timing grid, and looping as-is.
 export interface PreludeVoice {
-  trigger: (note: string, time: number, velocity: number) => void;
+  trigger: (note: string, time: number, velocity: number, options?: PreludeTriggerOptions) => void;
 }
 
 export class Prelude {

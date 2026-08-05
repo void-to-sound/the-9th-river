@@ -49,8 +49,14 @@ export function createWarmDustVoice(): DustVoice {
   }).connect(filter);
 
   return {
-    trigger: (note, time, velocity) => {
-      fm.triggerAttackRelease(note, "16n", time, velocity);
+    trigger: (note, time, velocity, options) => {
+      if (options?.reverbWet !== undefined) {
+        reverb.wet.rampTo(options.reverbWet, 0.05, time);
+      }
+      if (options?.release !== undefined) {
+        fm.set({ envelope: { release: options.release } });
+      }
+      fm.triggerAttackRelease(note, options?.duration ?? "16n", time, velocity);
     },
     dispose: () => { fm.dispose(); filter.dispose(); distortion.dispose(); reverb.dispose(); },
   };
@@ -80,24 +86,111 @@ export function createColdDustVoice(): DustVoice {
 }
 
 // ── Floating Dust ────────────────────────────────────────────────────────
-export function createFloatingDustVoice(): DustVoice {
+export interface FloatingDustVoice extends DustVoice {
+  // dB, typically 0 (bypass) to -12 (noticeably softened). Sine has no
+  // harmonics to tame, so this just gently pulls down the fundamental of
+  // higher notes rather than carving out overtones.
+  setHighShelfGain(db: number): void;
+}
+
+// `octaveShift` transposes every note before it's played (e.g. -1 = down an
+// octave). The rule driving this voice (register-cycling, etc.) is untouched
+// — only where the result actually lands on the keyboard changes.
+export function createFloatingDustVoice(octaveShift = 0): FloatingDustVoice {
   const reverb = new Tone.Reverb({ decay: 3, wet: 0.4 }).toDestination();
   const feedbackDelay = new Tone.FeedbackDelay({ delayTime: "8n", feedback: 0.35, wet: 0.4 }).connect(reverb);
   const panner = new Tone.Panner().connect(feedbackDelay);
   const lfo = new Tone.LFO({ frequency: "4n", min: -1, max: 1 }).start();
   lfo.connect(panner.pan);
+
+  // Softens highs before they hit the delay/reverb, so the tail rounds off
+  // too. 500Hz, not 2000Hz — the piece's highest note (A5) is only 880Hz,
+  // so a shelf up at 2000Hz was never actually touching the notes that felt
+  // piercing. 500Hz catches the top two notes of most chords (C5 and up).
+  const highShelf = new Tone.Filter({ frequency: 500, type: "highshelf", gain: -5 }).connect(panner);
+
+  // Pure sine has no harmonics to carry perceived loudness at low pitch, so
+  // equal-loudness falloff hits it hard — compensate a few dB per octave
+  // shifted down, or the transposed voice just reads as quieter.
+  const loudnessCompensationDb = Math.max(0, -octaveShift) * 4;
+
   const grains = new Tone.PolySynth(Tone.Synth, {
     oscillator: { type: "sine" },
     detune: 20,
     envelope: { attack: 0.1, decay: 0.3, sustain: 0.3, release: 1.2 },
-    volume: -14,
-  }).connect(panner);
+    volume: -14 + loudnessCompensationDb,
+  }).connect(highShelf);
 
   return {
-    trigger: (note, time, velocity) => {
-      grains.triggerAttackRelease(note, "8n", time, velocity);
+    trigger: (note, time, velocity, options) => {
+      if (options?.reverbWet !== undefined) {
+        reverb.wet.rampTo(options.reverbWet, 0.05, time);
+      }
+      if (options?.delayWet !== undefined) {
+        feedbackDelay.wet.rampTo(options.delayWet, 0.05, time);
+      }
+      if (options?.release !== undefined) {
+        grains.set({ envelope: { release: options.release } });
+      }
+      const shifted = octaveShift === 0 ? note : Tone.Frequency(note).transpose(octaveShift * 12).toNote();
+      grains.triggerAttackRelease(shifted, options?.duration ?? "8n", time, velocity);
     },
-    dispose: () => { grains.dispose(); lfo.stop(); lfo.dispose(); panner.dispose(); feedbackDelay.dispose(); reverb.dispose(); },
+    setHighShelfGain: (db) => {
+      highShelf.gain.value = db;
+    },
+    dispose: () => {
+      grains.dispose(); highShelf.dispose(); lfo.stop(); lfo.dispose();
+      panner.dispose(); feedbackDelay.dispose(); reverb.dispose();
+    },
+  };
+}
+
+// ── Warm Floating Dust ───────────────────────────────────────────────────
+// Floating Dust, nudged a little toward Warm Dust's character: less detune
+// wobble, a deeper top-end shelf cut, a gentle extra lowpass, and calmer
+// (narrower) panning — same "floating" identity, just less bright/restless.
+export function createWarmFloatingDustVoice(): FloatingDustVoice {
+  const reverb = new Tone.Reverb({ decay: 3, wet: 0.4 }).toDestination();
+  const feedbackDelay = new Tone.FeedbackDelay({ delayTime: "8n", feedback: 0.35, wet: 0.4 }).connect(reverb);
+  const panner = new Tone.Panner().connect(feedbackDelay);
+  const lfo = new Tone.LFO({ frequency: "4n", min: -0.5, max: 0.5 }).start(); // narrower pan sweep than Floating Dust
+  lfo.connect(panner.pan);
+
+  // 700Hz, not 3500Hz — a pure sine has no harmonics, and this piece's
+  // highest notes (E5/G5) only reach ~660-784Hz, so a cutoff up at 3500Hz
+  // was never actually touching anything (the same class of bug as the old
+  // highShelf-at-2000Hz issue). 700Hz actually rounds off the brightest
+  // notes instead of doing nothing.
+  const lowpass = new Tone.Filter({ frequency: 700, type: "lowpass" }).connect(panner);
+  const highShelf = new Tone.Filter({ frequency: 500, type: "highshelf", gain: -9 }).connect(lowpass);
+
+  const grains = new Tone.PolySynth(Tone.Synth, {
+    oscillator: { type: "sine" },
+    detune: 9,
+    envelope: { attack: 0.1, decay: 0.3, sustain: 0.3, release: 1.2 },
+    volume: -14,
+  }).connect(highShelf);
+
+  return {
+    trigger: (note, time, velocity, options) => {
+      if (options?.reverbWet !== undefined) {
+        reverb.wet.rampTo(options.reverbWet, 0.05, time);
+      }
+      if (options?.delayWet !== undefined) {
+        feedbackDelay.wet.rampTo(options.delayWet, 0.05, time);
+      }
+      if (options?.release !== undefined) {
+        grains.set({ envelope: { release: options.release } });
+      }
+      grains.triggerAttackRelease(note, options?.duration ?? "8n", time, velocity);
+    },
+    setHighShelfGain: (db) => {
+      highShelf.gain.value = db;
+    },
+    dispose: () => {
+      grains.dispose(); highShelf.dispose(); lowpass.dispose(); lfo.stop(); lfo.dispose();
+      panner.dispose(); feedbackDelay.dispose(); reverb.dispose();
+    },
   };
 }
 
